@@ -1,0 +1,45 @@
+name: Build Desktop Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r desktop/requirements.txt pyinstaller
+
+      - name: Build exe
+        run: pyinstaller desktop/BiliFollowSync.spec
+
+      - name: Self test (offscreen)
+        shell: pwsh
+        run: |
+          # exe 是 GUI 子系统程序，必须用 Start-Process -Wait 真正等待其退出
+          $p = Start-Process -FilePath ".\dist\BiliFollowSync.exe" -ArgumentList "--selftest" -Wait -PassThru
+          Write-Host "selftest exit code: $($p.ExitCode)"
+          exit $p.ExitCode
+
+      - name: UI test (offscreen, mocked network)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath ".\dist\BiliFollowSync.exe" -ArgumentList "--uitest" -Wait -PassThru -RedirectStandardOutput "uitest_out.txt" -RedirectStandardError "uitest_err.txt"
+          Write-Host "--- uitest stdout ---"; Get-Content uitest_out.txt
+          Write-Host "--- uitest stderr ---"; Get-Content uitest_err.txt
+          exit $p.ExitCode
+
+      - name: Attach exe to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/BiliFollowSync.exe
